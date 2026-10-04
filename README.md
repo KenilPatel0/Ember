@@ -315,8 +315,8 @@ Ember is built with care, craft, and love for music:
 
 - **Mayank Malaviya** ([@AIwolfie](https://github.com/AIwolfie) · [aiwolfie.online](https://aiwolfie.online)) — *Original creator, lead architect, and maintainer of Ember.* <a href="https://aiwolfie.gumroad.com/coffee" target="_blank"><img align="center" src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000" alt="Buy Me a Coffee"/></a>
 - **Muhammad Taezeem Tariq Matta** ([@taezeem14](https://github.com/taezeem14)) — *Contributor — development improvements and project upgrades.*
-- **Kenil Ribadiya** ([kenilribadiya.in](https://kenilribadiya.in/)) — *Contributor — Mobile App Architect & Android Flutter Implementation.*
-
+- Kenil Ribadiya (kenilribadiya.in
+) — Contributor — Mobile App Architect & Android Flutter Implementation. <a href="https://buymeacoffee.com/kenil4210k" target="_blank"><img align="center" src="https://img.shields.io/badge/☕_Buy_Me_a_Coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000" alt="Buy Me a Coffee"/></a>
 For full details, see [CREDITS.md](CREDITS.md).
 
 <br/>
