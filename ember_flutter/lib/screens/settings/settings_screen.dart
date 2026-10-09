@@ -288,6 +288,7 @@ class _UpdateSection extends StatefulWidget {
 class _UpdateSectionState extends State<_UpdateSection> {
   bool _checking = false;
   bool _downloading = false;
+  double? _downloadProgress;
   int? _patchNumber;
   UpdateStatus? _status;
   String? _feedback;
@@ -347,17 +348,39 @@ class _UpdateSectionState extends State<_UpdateSection> {
   Future<void> _applyUpdate() async {
     final apkUrl = UpdateService.instance.availableApkUrl;
     if (apkUrl != null) {
-      final uri = Uri.parse(apkUrl);
-      try {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (e) {
-        debugPrint('Failed to launch URL: $e');
+      if (mounted) {
+        setState(() {
+          _downloading = true;
+          _downloadProgress = 0.0;
+          _feedback = 'Downloading update...';
+        });
       }
+      await UpdateService.instance.downloadApk(
+        apkUrl,
+        (progress) {
+          if (mounted) {
+            setState(() {
+              _downloadProgress = progress;
+            });
+          }
+        },
+        (msg, success) {
+          if (mounted) {
+            setState(() {
+              _downloading = false;
+              _downloadProgress = null;
+              _feedback = msg;
+              if (success) _status = UpdateStatus.restartRequired; // Prompt restart or indicate done
+            });
+          }
+        },
+      );
       return;
     }
 
     setState(() {
       _downloading = true;
+      _downloadProgress = null;
     });
     final success = await UpdateService.instance.downloadUpdate();
     if (mounted) {
@@ -454,7 +477,11 @@ class _UpdateSectionState extends State<_UpdateSection> {
                         )
                       : const Icon(Icons.download_rounded, size: 18),
                   label: Text(
-                    _downloading ? 'Downloading patch...' : 'Update now',
+                    _downloading
+                        ? (_downloadProgress != null
+                            ? 'Downloading... ${(_downloadProgress! * 100).toStringAsFixed(0)}%'
+                            : 'Downloading patch...')
+                        : 'Update now',
                     style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),

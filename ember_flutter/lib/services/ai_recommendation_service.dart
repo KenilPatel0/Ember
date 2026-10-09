@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:ember_flutter/services/database_service.dart';
 import 'package:ember_flutter/services/recommender_service.dart';
 import 'package:ember_flutter/services/python_service.dart';
@@ -14,13 +12,9 @@ class AiRecommendationResponse {
 }
 
 class AiRecommendationService {
-  // Directly using Groq API for 100% free serverless architecture
-  static const String endpoint = "https://api.groq.com/openai/v1/chat/completions";
-  static String get apiKey => dotenv.env['GROQ_KEY'] ?? 'YOUR_GROQ_API_KEY';
-
   static final Map<String, Future<AiRecommendationResponse>> _activeRequests = {};
 
-  /// Gets an AI Recommendation Mix, falling back to local SQLite if it fails
+  /// Gets a Mix, falling back to local SQLite if it fails
   static Future<AiRecommendationResponse> getAiMix(String mood) async {
     // 1. Debounce and Lock (Prevent users from spamming the button)
     if (_activeRequests.containsKey(mood)) {
@@ -41,8 +35,8 @@ class AiRecommendationService {
     try {
       final db = DatabaseService.instance;
       
-      // 2. Cache Layer (Your local 'Redis')
-      final cacheKey = 'ai_mix_$mood';
+      // 2. Cache Layer
+      final cacheKey = 'local_mix_$mood';
       final cachedString = await db.getCache(cacheKey);
       if (cachedString != null) {
         try {
@@ -56,104 +50,43 @@ class AiRecommendationService {
         } catch (_) {}
       }
 
+      final List<Map<String, String>> resolvedSongs = [];
+
+      // Combine direct Python search with local RecommenderService
+      final songSearchRes = await PythonService.search("$mood songs", filterType: "songs");
+      if (songSearchRes.isSuccess && songSearchRes.data != null && (songSearchRes.data as List).isNotEmpty) {
+         for(var item in (songSearchRes.data as List).take(10)) {
+           resolvedSongs.add(Map<String, String>.from(item.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))));
+         }
+      }
+
       final playHistory = await db.getPlayHistory();
+      final recentIds = playHistory.take(3).map((e) => e['videoId']?.toString() ?? '').where((id) => id.isNotEmpty).toList();
+      final seedIds = recentIds.isNotEmpty ? recentIds : ['default'];
       
-      // Get unique recent artists
-      final Set<String> artistsSet = {};
-      for (var track in playHistory.take(20)) {
-        if (track['artist'] != null && track['artist'] != 'Unknown Artist') {
-          artistsSet.add(track['artist']!);
-        }
-      }
-      final recentArtists = artistsSet.take(5).toList();
-
-      String contextLine = "";
-      if (recentArtists.isNotEmpty) {
-         contextLine = "The user recently listened to artists: ${recentArtists.join(", ")}.\nRecommend exactly 3 new songs they might like (do not repeat their recent artists).";
-      } else {
-         contextLine = "The user is brand new to the music app and has no listening history.\nRecommend exactly 3 universally loved, extremely popular songs that perfectly fit their mood.";
-      }
-
-      final prompt = '''
-You are an expert DJ AI for the Ember music app. 
-$contextLine
-Their current context/mood is: $mood.
-Explain WHY you recommended these songs in one short engaging sentence.
-
-Format your response exactly as JSON like this:
-{
-  "recommendations": [
-    {"song_title": "Title 1", "artist": "Artist 1"},
-    {"song_title": "Title 2", "artist": "Artist 2"}
-  ],
-  "reason": "Because you've been listening to X, here is some Y."
-}
-''';
-
-      // 2. Make request directly to Groq (No Cloudflare Middleman)
-      final response = await http.post(
-        Uri.parse(endpoint),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          "model": "llama-3.1-8b-instant",
-          "messages": [
-            { "role": "system", "content": "You are a helpful JSON music recommendation API. Only output valid JSON without markdown wrapping." },
-            { "role": "user", "content": prompt }
-          ],
-          "response_format": { "type": "json_object" }
-        }),
-      ).timeout(const Duration(seconds: 15)); // Increased slightly to give Groq breathing room
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final aiString = data['choices']?[0]?['message']?['content'] ?? "";
-        
-        // Try parsing JSON out of the AI response
-        try {
-          final start = aiString.indexOf('{');
-          final end = aiString.lastIndexOf('}');
-          if (start != -1 && end != -1) {
-             final cleanJson = aiString.substring(start, end + 1);
-             final aiContent = jsonDecode(cleanJson);
-             
-             final List<Map<String, String>> resolvedSongs = [];
-             final List recommendations = aiContent['recommendations'] ?? [];
-             
-             // Convert AI response into actual YouTube Playable IDs via native python
-             for (var rec in recommendations) {
-               final title = rec['song_title'] ?? '';
-               final artist = rec['artist'] ?? '';
-               if (title.isNotEmpty && artist.isNotEmpty) {
-                  final searchRes = await PythonService.search("$title $artist", filterType: "songs");
-                  if (searchRes.isSuccess && searchRes.data != null && (searchRes.data as List).isNotEmpty) {
-                    final item = (searchRes.data as List).first;
-                    resolvedSongs.add(Map<String, String>.from(item.map((key, value) => MapEntry(key.toString(), value?.toString() ?? ''))));
-                  }
-               }
-             }
-
-             if (resolvedSongs.isNotEmpty) {
-               final responseObj = AiRecommendationResponse(songs: resolvedSongs, reason: aiContent['reason'] ?? "Here is your custom mix!");
-               // Save to Cache
-               await db.setCache(cacheKey, jsonEncode({
-                 'timestamp': DateTime.now().millisecondsSinceEpoch,
-                 'songs': resolvedSongs,
-                 'reason': responseObj.reason
-               }));
-               return responseObj;
-             }
+      final localRecs = await RecommenderService.instance.getRecommendations(seedIds);
+      for(var rec in localRecs.take(10)) {
+          final mapped = Map<String, String>.from(rec.map((key, value) => MapEntry(key.toString(), value?.toString() ?? '')));
+          if(!resolvedSongs.any((s) => s['videoId'] == mapped['videoId'])) {
+              resolvedSongs.add(mapped);
           }
-        } catch (e) {
-          debugPrint("Failed to parse AI JSON: $e");
-        }
-      } else {
-         debugPrint("Groq request failed: ${response.statusCode}");
+      }
+
+      if (resolvedSongs.isNotEmpty) {
+        final responseObj = AiRecommendationResponse(
+            songs: resolvedSongs.take(15).toList(), 
+            reason: "Curated locally based on your taste and $mood vibe!"
+        );
+        // Save to Cache
+        await db.setCache(cacheKey, jsonEncode({
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+          'songs': responseObj.songs,
+          'reason': responseObj.reason
+        }));
+        return responseObj;
       }
     } catch (e) {
-      debugPrint("AI Request Failed or Timed out. Falling back... $e");
+      debugPrint("Local Recommendation Request Failed. $e");
     }
 
     // 3. Fallback to Local Recommendations
@@ -164,7 +97,7 @@ Format your response exactly as JSON like this:
     final localRecs = await RecommenderService.instance.getRecommendations(['default']);
     return AiRecommendationResponse(
       songs: localRecs.take(5).toList(), 
-      reason: "Groq is taking a break! Here are some local tracks picked from your favorites."
+      reason: "Here are some local tracks picked from your favorites."
     );
   }
 }

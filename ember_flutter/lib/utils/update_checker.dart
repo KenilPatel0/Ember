@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:ember_flutter/services/update_service.dart';
 
 class UpdateChecker {
   static const String _repoUrl = 'https://api.github.com/repos/AIwolfie/Ember/contents/Android_APK';
@@ -33,7 +33,11 @@ class UpdateChecker {
         // Simple version comparison against currently running version
         if (_isNewerVersion(currentVersion, latestVersion)) {
           if (context.mounted) {
-            _showUpdateDialog(context, latestVersion, downloadUrl);
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => _UpdateDialog(newVersion: latestVersion, downloadUrl: downloadUrl),
+            );
           }
         }
       }
@@ -59,43 +63,90 @@ class UpdateChecker {
     }
     return false;
   }
+}
 
-  static void _showUpdateDialog(BuildContext context, String newVersion, String url) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          title: const Text('Update Available 🚀', style: TextStyle(color: Colors.white)),
-          content: Text(
-            'A new version of Ember (v$newVersion) is available! Please update to get the latest features and bug fixes.',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Later', style: TextStyle(color: Colors.grey)),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final uri = Uri.parse(url);
-                try {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                } catch (e) {
-                  debugPrint('Failed to launch URL: $e');
-                }
-                if (context.mounted) {
-                  Navigator.of(context).pop();
-                }
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
-              child: const Text('Download Update', style: TextStyle(color: Colors.black)),
-            ),
-          ],
-        );
+class _UpdateDialog extends StatefulWidget {
+  final String newVersion;
+  final String downloadUrl;
+
+  const _UpdateDialog({required this.newVersion, required this.downloadUrl});
+
+  @override
+  State<_UpdateDialog> createState() => _UpdateDialogState();
+}
+
+class _UpdateDialogState extends State<_UpdateDialog> {
+  bool _downloading = false;
+  double _progress = 0.0;
+  String _status = '';
+
+  void _startDownload() async {
+    setState(() {
+      _downloading = true;
+      _status = 'Starting download...';
+    });
+
+    await UpdateService.instance.downloadApk(
+      widget.downloadUrl,
+      (progress) {
+        if (mounted) {
+          setState(() {
+            _progress = progress;
+            _status = 'Downloading... ${(progress * 100).toStringAsFixed(0)}%';
+          });
+        }
+      },
+      (msg, success) {
+        if (mounted) {
+          setState(() {
+            _downloading = false;
+            _status = msg;
+          });
+          if (success) {
+            Navigator.of(context).pop();
+          }
+        }
       },
     );
   }
-}
 
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1E1E1E),
+      title: const Text('Update Available 🚀', style: TextStyle(color: Colors.white)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'A new version of Ember (v${widget.newVersion}) is available! Please update to get the latest features and bug fixes.',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          if (_downloading) ...[
+            const SizedBox(height: 16),
+            LinearProgressIndicator(value: _progress, backgroundColor: Colors.white12, color: Colors.orangeAccent),
+            const SizedBox(height: 8),
+            Text(_status, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+          ] else if (_status.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(_status, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+          ]
+        ],
+      ),
+      actions: [
+        if (!_downloading)
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Later', style: TextStyle(color: Colors.grey)),
+          ),
+        if (!_downloading)
+          ElevatedButton(
+            onPressed: _startDownload,
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
+            child: const Text('Download Update', style: TextStyle(color: Colors.black)),
+          ),
+      ],
+    );
+  }
+}

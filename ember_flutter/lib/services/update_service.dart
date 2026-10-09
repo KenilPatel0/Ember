@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:open_file/open_file.dart';
 
 class UpdateService {
   UpdateService._();
@@ -126,4 +131,44 @@ class UpdateService {
       return null;
     }
   }
+
+  /// Downloads a fresh Base APK to the local device and prompts install
+  Future<void> downloadApk(
+    String url,
+    Function(double) onProgress,
+    Function(String, bool) onComplete,
+  ) async {
+    try {
+      if (Platform.isAndroid) {
+        await Permission.storage.request();
+        await Permission.notification.request();
+      }
+
+      final dir = await getExternalStorageDirectory();
+      if (dir == null) {
+        onComplete("Failed to locate storage", false);
+        return;
+      }
+      
+      final savePath = "${dir.path}/Ember_Update.apk";
+      final dio = Dio();
+      
+      await dio.download(
+        url,
+        savePath,
+        onReceiveProgress: (count, total) {
+          if (total > 0) {
+            onProgress(count / total);
+          }
+        },
+      );
+      
+      onComplete("Download complete", true);
+      await OpenFile.open(savePath);
+    } catch (e) {
+      debugPrint("APK Download Error: $e");
+      onComplete("Failed to download update", false);
+    }
+  }
 }
+

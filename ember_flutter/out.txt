@@ -1,0 +1,10 @@
+﻿Analyzing ember_flutter...                                      
+
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\screens\artist\artist_screen.dart:35:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\screens\download\bloc\download_bloc.dart:147:11 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\utils\search_algorithm.dart:135:9 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\widgets\equalizer_sheet.dart:48:19 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\widgets\playlist_sheet.dart:65:27 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\widgets\playlist_sheet.dart:97:25 - curly_braces_in_flow_control_structures
+   info - Statements in an if should be enclosed in a block. Try wrapping the statement in a block - lib\widgets\playlist_sheet.dart:120:19 - curly_braces_in_flow_control_structures
+
