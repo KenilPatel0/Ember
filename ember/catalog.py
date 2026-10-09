@@ -322,7 +322,7 @@ class CatalogSource:
             return {"title": "Unknown", "tracks": []}
             
         import urllib.parse
-        if "spotify.com" in identifier:
+        if "spotify.com" in identifier or "spotify.link" in identifier:
             return self._import_spotify_playlist(identifier)
             
         if "list=" in identifier:
@@ -352,39 +352,37 @@ class CatalogSource:
         return {"title": title, "tracks": tracks}
 
     def _import_spotify_playlist(self, url: str) -> Dict[str, Any]:
-        """Scrape Spotify embed API for playlist tracks and match them to YT."""
-        import requests, re, json
+        """Scrape Spotify API for playlist/track metadata and match them to YT."""
         import concurrent.futures
+        import requests
+        from ember.importer import fetch_spotify_tracks
         
         try:
-            # Transform normal url to embed url
-            if "/playlist/" in url and "/embed/" not in url:
-                url = url.replace("/playlist/", "/embed/playlist/")
-            elif "/album/" in url and "/embed/" not in url:
-                url = url.replace("/album/", "/embed/album/")
-            
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-            r = requests.get(url, headers=headers, timeout=10)
-            
-            match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text)
-            if not match:
-                log.warning("Could not find NEXT_DATA in Spotify embed")
-                return {"title": "Failed to Parse Spotify", "tracks": []}
-                
-            data = json.loads(match.group(1))
-            entity = data.get("props", {}).get("pageProps", {}).get("state", {}).get("data", {}).get("entity", {})
-            title = entity.get("name", "Spotify Import")
-            track_list = entity.get("trackList", [])
-            
+            # Resolve shortlinks
+            if "spotify.link" in url or "spotify.app.link" in url:
+                try:
+                    r = requests.head(url, allow_redirects=True, timeout=10)
+                    if r.url != url:
+                        url = r.url
+                    else:
+                        r = requests.get(url, timeout=10)
+                        url = r.url
+                except Exception as exc:
+                    log.warning("Failed to resolve spotify link: %s", exc)
+
+            # Use importer robust parsing
+            track_list = fetch_spotify_tracks(url)
             if not track_list:
-                return {"title": title, "tracks": []}
-                
+                return {"title": "Failed to Parse Spotify", "tracks": []}
+            
+            title = track_list[0].get("playlist_title") or "Spotify Import"
+            
             # Limit to 100 tracks to avoid crazy ytmusic rate limiting / waiting forever
             track_list = track_list[:100]
             
             def _resolve_track(trk):
-                t_name = trk.get("title", "")
-                t_artist = trk.get("subtitle", "")
+                t_name = trk.get("title") or trk.get("name") or ""
+                t_artist = trk.get("subtitle") or trk.get("artist") or ""
                 if not t_name: return None
                 query = f"{t_name} {t_artist}".strip()
                 # Search ytmusic
